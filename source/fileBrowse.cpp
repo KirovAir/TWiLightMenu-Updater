@@ -43,9 +43,11 @@ void findCompatibleFiles(vector<DirEntry>& dirContents, std::string currentDir="
 
 			stat(pent->d_name, &st);
 			dirEntry.name = pent->d_name;
+
 			char scanningMessage[512];
 			snprintf(scanningMessage, sizeof(scanningMessage), "Scanning SD card for DS roms...\n\n(Press B to cancel)\n\n\n\n\n\n\n\n\n%s", dirEntry.name.c_str());
 			displayBottomMsg(scanningMessage);
+
 			dirEntry.isDirectory = (st.st_mode & S_IFDIR) ? true : false;
 				if(!(dirEntry.isDirectory) && dirEntry.name.length() >= 4) {
 					bool isCompatible = false;

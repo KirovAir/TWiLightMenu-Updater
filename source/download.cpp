@@ -101,7 +101,6 @@ static Result setupContext(CURL *hnd, const char * url) {
 Result downloadToFile(std::string url, std::string path) {
 	Result ret = 0;
 	printf("Downloading from:\n%s\nto:\n%s\n", url.c_str(), path.c_str());
-	sleep(5);
 	void *socubuf = memalign(0x1000, 0x100000);
 	if(!socubuf) {
 		return -1;
@@ -181,7 +180,7 @@ Result downloadBoxartToFile(std::string filename, std::string sha1, std::string 
 	}
 
 	CURL *hnd = curl_easy_init();
-	ret = setupContext(hnd, "https://webhook.site/a04dda46-ee94-4f0e-8106-e76743d59c26");
+	ret = setupContext(hnd, "https://twilight.jessesander.nl/api");
 	if(ret != 0) {
 		socExit();
 		free(result_buf);
@@ -192,15 +191,39 @@ Result downloadBoxartToFile(std::string filename, std::string sha1, std::string 
 		return ret;
 	}
 
-	curl_easy_setopt(hnd, CURLOPT_POSTFIELDS,	"Filename=" + filename + 
-												"&Sha1=" + sha1 + 
-												"&Header=" + header);
+	Handle fileHandle;
+	u64 offset = 0;
+	u32 bytesWritten = 0;
+
+	ret = openFile(&fileHandle, targetPath.c_str(), true);
+	if(R_FAILED(ret)) {
+		displayBottomMsg("Error: couldn't open file to write.\n");
+		sleep(5);
+		socExit();
+		free(result_buf);
+		free(socubuf);
+		result_buf = NULL;
+		result_sz = 0;
+		result_written = 0;
+		return DL_ERROR_WRITEFILE;
+	}
+
+	std::string formdata =	"Filename=" + std::string(curl_easy_escape(hnd, filename.c_str(), filename.size())) + 
+							"&Sha1=" + sha1 + 
+							"&Header=" + std::string(curl_easy_escape(hnd, header.c_str(), header.size())) ;
+
+	curl_easy_setopt(hnd, CURLOPT_POSTFIELDS, formdata.c_str());
 
 	CURLcode cres = curl_easy_perform(hnd);
+	long response_code = 0;
+	if(cres == CURLE_OK) {
+		curl_easy_getinfo(hnd, CURLINFO_RESPONSE_CODE, &response_code);
+	}
 	curl_easy_cleanup(hnd);
 
 	if(cres != CURLE_OK) {
-		printf("Error in:\ncurl\n");
+		displayBottomMsg("Error in:\ncurl\n");
+		sleep(5);
 		socExit();
 		free(result_buf);
 		free(socubuf);
@@ -210,20 +233,18 @@ Result downloadBoxartToFile(std::string filename, std::string sha1, std::string 
 		return -1;
 	}
 
-	Handle fileHandle;
-	u64 offset = 0;
-	u32 bytesWritten = 0;
-
-	ret = openFile(&fileHandle, targetPath.c_str(), true);
-	if(R_FAILED(ret)) {
-		printf("Error: couldn't open file to write.\n");
+	if (response_code != 200) {
+		char downloadMessage[512];
+		snprintf(downloadMessage, sizeof(downloadMessage), "Downloading\n%s.png\nNothing found! (Code: %ld)", filename.c_str(), response_code);
+		displayBottomMsg(downloadMessage);
+		sleep(1);
 		socExit();
 		free(result_buf);
 		free(socubuf);
 		result_buf = NULL;
 		result_sz = 0;
 		result_written = 0;
-		return DL_ERROR_WRITEFILE;
+		return 0;
 	}
 
 	FSFILE_Write(fileHandle, &bytesWritten, offset, result_buf, result_written, 0);
@@ -1569,20 +1590,21 @@ void downloadBoxart(void) {
 	displayBottomMsg("Scanning SD card for DS roms...\n\n(Press B to cancel)");
 
 	chdir(scanDir.c_str());
+	dirContents.clear(); // KirovAir: This was an annoying fix.. clears previous folder input.
 	continueNdsScan = true;
 	createThread((ThreadFunc)scanToCancelBoxArt);
-	findCompatibleFiles(dirContents);
+	findCompatibleFiles(dirContents, scanDir.substr(0, scanDir.length()-1));
 	continueNdsScan = false;
 
+	mkdir("sdmc:/_nds/TWiLightMenu/boxart", 0777);
 	mkdir("sdmc:/_nds/TWiLightMenu/boxart/temp", 0777);
 	for(int i=0;i<(int)dirContents.size();i++) {
 		char boxartPath[256];
 		snprintf(boxartPath, sizeof(boxartPath), "sdmc:/_nds/TWiLightMenu/boxart/%s.png", dirContents[i].name.c_str());
-		if(access(boxartPath, F_OK) != 0) { // Check if exists.
-			char downloadMessage[50];
-			snprintf(downloadMessage, sizeof(downloadMessage), "Handling %s", dirContents[i].path.c_str());
+		if(access(boxartPath, F_OK) != 0 || getFileSize(boxartPath) == 0) { // Check if exists.
+			char downloadMessage[512];
+			snprintf(downloadMessage, sizeof(downloadMessage), "Downloading\n%s.png", dirContents[i].name.c_str());
 			displayBottomMsg(downloadMessage);
-			sleep(2);
 			
 			// Make a base64 string of first 328 bytes.
 			// This will replace titleId with more info to determine DS(i) and gb(c) titles. (And more in the future)
@@ -1596,30 +1618,27 @@ void downloadBoxart(void) {
 					BYTE header[328]; 
 					fread(header, 1, 328, f_nds_file);
 					headerData = base64_encode(header,sizeof(header));
-
-					// DEBUG
-					std::cin >> headerData;
-					std::ofstream out("output.txt");
-					out << headerData;
-					out.close();
 				}
 			}
 			fclose(f_nds_file);	
 
-			std::cin >> dirContents[i].sha1;
-			std::ofstream out2("sha1.txt");
-			out2 << dirContents[i].sha1;
-			out2.close();
-
-			snprintf(downloadMessage, sizeof(downloadMessage), "Downloading %s.png", dirContents[i].name.c_str());
-			displayBottomMsg(downloadMessage);
-
-			Result downRes = downloadBoxartToFile(dirContents[i].name, headerData, dirContents[i].sha1, boxartPath);
+			snprintf(boxartPath, sizeof(boxartPath), "sdmc:/_nds/TWiLightMenu/boxart/temp/%s.png", dirContents[i].name.c_str());
+			Result downRes = downloadBoxartToFile(dirContents[i].name, dirContents[i].sha1, headerData, boxartPath);
 
 			if (downRes != 0) {
-				snprintf(downloadMessage, sizeof(downloadMessage), "Could not download \n%s", dirContents[i].name.c_str());
+				snprintf(downloadMessage, sizeof(downloadMessage), "Could not download\n%s\n\nA: Continue    B: Cancel", dirContents[i].name.c_str());
 				displayBottomMsg(downloadMessage);
-				sleep(5);
+				while (1) {
+					gspWaitForVBlank();
+					hidScanInput();
+					const u32 hDown = hidKeysDown();
+
+					if (hDown & KEY_A) {
+						break;
+					} else if(hDown & KEY_B) {
+						return;
+					}
+				}
 			}
 		}
 	}
@@ -1647,7 +1666,6 @@ void downloadBoxart(void) {
 }
 
 void downloadThemes(void) {
-
 	int selectedTwlTheme = 0;
 	int keyRepeatDelay = 0;
 	std::string themeNames[] = {"DSi theme", "3DS theme", "R4 theme", "Acekard theme"};

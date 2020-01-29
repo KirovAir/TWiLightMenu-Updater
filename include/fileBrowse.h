@@ -25,4 +25,6 @@ void findCompatibleFiles(vector<DirEntry>& dirContents, std::string currentDir =
 
 void getDirectoryContents (vector<DirEntry>& dirContents);
 
+off_t getFileSize(const char *fileName);
+
 #endif //FILE_BROWSE_H
