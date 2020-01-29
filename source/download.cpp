@@ -10,6 +10,7 @@
 #include "inifile.h"
 #include "keyboard.h"
 #include "thread.h"
+#include "base64.h"
 
 extern "C" {
 	#include "cia.h"
@@ -100,7 +101,7 @@ static Result setupContext(CURL *hnd, const char * url) {
 Result downloadToFile(std::string url, std::string path) {
 	Result ret = 0;
 	printf("Downloading from:\n%s\nto:\n%s\n", url.c_str(), path.c_str());
-
+	sleep(5);
 	void *socubuf = memalign(0x1000, 0x100000);
 	if(!socubuf) {
 		return -1;
@@ -152,6 +153,77 @@ Result downloadToFile(std::string url, std::string path) {
 		result_sz = 0;
 		result_written = 0;
 		return -1;
+	}
+
+	FSFILE_Write(fileHandle, &bytesWritten, offset, result_buf, result_written, 0);
+
+	socExit();
+	free(result_buf);
+	free(socubuf);
+	result_buf = NULL;
+	result_sz = 0;
+	result_written = 0;
+	FSFILE_Close(fileHandle);
+	return 0;
+}
+
+Result downloadBoxartToFile(std::string filename, std::string sha1, std::string header, std::string targetPath) {
+	Result ret = 0;
+	void *socubuf = memalign(0x1000, 0x100000);
+	if(!socubuf) {
+		return -1;
+	}
+
+	ret = socInit((u32*)socubuf, 0x100000);
+	if(R_FAILED(ret)) {
+		free(socubuf);
+		return ret;
+	}
+
+	CURL *hnd = curl_easy_init();
+	ret = setupContext(hnd, "https://webhook.site/a04dda46-ee94-4f0e-8106-e76743d59c26");
+	if(ret != 0) {
+		socExit();
+		free(result_buf);
+		free(socubuf);
+		result_buf = NULL;
+		result_sz = 0;
+		result_written = 0;
+		return ret;
+	}
+
+	curl_easy_setopt(hnd, CURLOPT_POSTFIELDS,	"Filename=" + filename + 
+												"&Sha1=" + sha1 + 
+												"&Header=" + header);
+
+	CURLcode cres = curl_easy_perform(hnd);
+	curl_easy_cleanup(hnd);
+
+	if(cres != CURLE_OK) {
+		printf("Error in:\ncurl\n");
+		socExit();
+		free(result_buf);
+		free(socubuf);
+		result_buf = NULL;
+		result_sz = 0;
+		result_written = 0;
+		return -1;
+	}
+
+	Handle fileHandle;
+	u64 offset = 0;
+	u32 bytesWritten = 0;
+
+	ret = openFile(&fileHandle, targetPath.c_str(), true);
+	if(R_FAILED(ret)) {
+		printf("Error: couldn't open file to write.\n");
+		socExit();
+		free(result_buf);
+		free(socubuf);
+		result_buf = NULL;
+		result_sz = 0;
+		result_written = 0;
+		return DL_ERROR_WRITEFILE;
 	}
 
 	FSFILE_Write(fileHandle, &bytesWritten, offset, result_buf, result_written, 0);
@@ -1499,26 +1571,56 @@ void downloadBoxart(void) {
 	chdir(scanDir.c_str());
 	continueNdsScan = true;
 	createThread((ThreadFunc)scanToCancelBoxArt);
-	findNdsFiles(dirContents);
+	findCompatibleFiles(dirContents);
 	continueNdsScan = false;
 
 	mkdir("sdmc:/_nds/TWiLightMenu/boxart/temp", 0777);
 	for(int i=0;i<(int)dirContents.size();i++) {
-		char path[256];
-		snprintf(path, sizeof(path), "sdmc:/_nds/TWiLightMenu/boxart/%s.png", dirContents[i].tid);
-		if(access(path, F_OK) != 0) {
+		char boxartPath[256];
+		snprintf(boxartPath, sizeof(boxartPath), "sdmc:/_nds/TWiLightMenu/boxart/%s.png", dirContents[i].name.c_str());
+		if(access(boxartPath, F_OK) != 0) { // Check if exists.
 			char downloadMessage[50];
-			snprintf(downloadMessage, sizeof(downloadMessage), "Downloading \"%s.png\"...\n", dirContents[i].tid);
+			snprintf(downloadMessage, sizeof(downloadMessage), "Handling %s", dirContents[i].path.c_str());
+			displayBottomMsg(downloadMessage);
+			sleep(2);
+			
+			// Make a base64 string of first 328 bytes.
+			// This will replace titleId with more info to determine DS(i) and gb(c) titles. (And more in the future)
+			std::string headerData;
+			FILE *f_nds_file = fopen(dirContents[i].path.c_str(), "rb");
+			if (f_nds_file) {
+				fseek(f_nds_file, 0, SEEK_END);
+				off_t fsize = ftell(f_nds_file); // Get size
+				fseek(f_nds_file, 0, SEEK_SET);
+				if (fsize > 328) {
+					BYTE header[328]; 
+					fread(header, 1, 328, f_nds_file);
+					headerData = base64_encode(header,sizeof(header));
+
+					// DEBUG
+					std::cin >> headerData;
+					std::ofstream out("output.txt");
+					out << headerData;
+					out.close();
+				}
+			}
+			fclose(f_nds_file);	
+
+			std::cin >> dirContents[i].sha1;
+			std::ofstream out2("sha1.txt");
+			out2 << dirContents[i].sha1;
+			out2.close();
+
+			snprintf(downloadMessage, sizeof(downloadMessage), "Downloading %s.png", dirContents[i].name.c_str());
 			displayBottomMsg(downloadMessage);
 
-			const char *ba_region = getBoxartRegion(dirContents[i].tid[3]);
+			Result downRes = downloadBoxartToFile(dirContents[i].name, headerData, dirContents[i].sha1, boxartPath);
 
-			char boxartUrl[256];
-			snprintf(boxartUrl, sizeof(boxartUrl), "https://art.gametdb.com/ds/coverS/%s/%s.png", ba_region, dirContents[i].tid);
-			char boxartPath[256];
-			snprintf(boxartPath, sizeof(boxartPath), "/_nds/TWiLightMenu/boxart/temp/%s.png", dirContents[i].tid);
-
-			downloadToFile(boxartUrl, boxartPath);
+			if (downRes != 0) {
+				snprintf(downloadMessage, sizeof(downloadMessage), "Could not download \n%s", dirContents[i].name.c_str());
+				displayBottomMsg(downloadMessage);
+				sleep(5);
+			}
 		}
 	}
 

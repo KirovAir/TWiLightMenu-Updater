@@ -3,7 +3,7 @@
 #include <dirent.h>
 #include <vector>
 #include <unistd.h>
-
+#include "sha1.hpp"
 
 using namespace std;
 
@@ -25,7 +25,7 @@ int grabTID(FILE *ndsFile, char *buf) {
 	return !(read == 4);
 }
 
-void findNdsFiles(vector<DirEntry>& dirContents) {
+void findCompatibleFiles(vector<DirEntry>& dirContents, std::string currentDir="") {
 	struct stat st;
 	DIR *pdir = opendir(".");
 
@@ -47,16 +47,38 @@ void findNdsFiles(vector<DirEntry>& dirContents) {
 			snprintf(scanningMessage, sizeof(scanningMessage), "Scanning SD card for DS roms...\n\n(Press B to cancel)\n\n\n\n\n\n\n\n\n%s", dirEntry.name.c_str());
 			displayBottomMsg(scanningMessage);
 			dirEntry.isDirectory = (st.st_mode & S_IFDIR) ? true : false;
-				if(!(dirEntry.isDirectory) && dirEntry.name.length() >= 3) {
-					if (strcasecmp(dirEntry.name.substr(dirEntry.name.length()-3, 3).c_str(), "nds") == 0) {
-						// Get game's TID
-						FILE *f_nds_file = fopen(dirEntry.name.c_str(), "rb");
-						// char game_TID[5];
-						grabTID(f_nds_file, dirEntry.tid);
-						dirEntry.tid[4] = 0;
-						fclose(f_nds_file);
+				if(!(dirEntry.isDirectory) && dirEntry.name.length() >= 4) {
+					bool isCompatible = false;
+					bool grabSha1 = false;
+					if (strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".nds") == 0
+					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-3, 3).c_str(), ".ds") == 0
+					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".dsi") == 0) {
+						isCompatible = true;
+					} else if (strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".nes") == 0
+					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".sfc") == 0
+					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".smc") == 0
+					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".sne") == 0
+					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-3, 3).c_str(), ".gb") == 0
+					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".sgb") == 0
+					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".gbc") == 0
+					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".gba") == 0
+					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".nds") == 0
+					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-3, 3).c_str(), ".gg") == 0
+					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".gen") == 0
+					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".sms") == 0
+					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".fds") == 0
+					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".bin") == 0) 
+					{
+						isCompatible = true;
+						grabSha1 = true;
+					}
 
-						// dirEntry.tid = game_TID;
+					if (isCompatible) {
+						dirEntry.path = currentDir + "/" + dirEntry.name;
+
+						if (grabSha1) { // TitleId not compatible. Use Sha1.
+							dirEntry.sha1 = SHA1::from_file(dirEntry.path);
+						}
 
 						dirContents.push_back(dirEntry);
 						file_count++;
@@ -72,7 +94,7 @@ void findNdsFiles(vector<DirEntry>& dirContents) {
 				&& dirEntry.name.compare("private") != 0
 				&& dirEntry.name.compare("retroarch") != 0) {
 					chdir(dirEntry.name.c_str());
-					findNdsFiles(dirContents);
+					findCompatibleFiles(dirContents, currentDir + "/" + dirEntry.name);
 					chdir("..");
 				}
 		}

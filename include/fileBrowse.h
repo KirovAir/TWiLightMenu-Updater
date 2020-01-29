@@ -10,8 +10,9 @@ using namespace std;
 
 struct DirEntry {
 	string name;
+	string path;
+	string sha1;
 	bool isDirectory;
-	char tid[5];
 	off_t size;
 };
 
@@ -20,7 +21,7 @@ typedef struct {
 	char gameCode[4];			//!< 4 characters for the game code.
 } sNDSHeadertitlecodeonly;
 
-void findNdsFiles(vector<DirEntry>& dirContents);
+void findCompatibleFiles(vector<DirEntry>& dirContents, std::string currentDir = "");
 
 void getDirectoryContents (vector<DirEntry>& dirContents);
 

@@ -29,6 +29,7 @@ void loadUsernamePassword(void);
 void saveUsernamePassword(void);
 
 Result downloadToFile(std::string url, std::string path);
+Result downloadBoxartToFile(std::string filename, std::string sha1, std::string header, std::string targetPath);
 Result downloadFromRelease(std::string url, std::string asset, std::string path);
 
 /**
