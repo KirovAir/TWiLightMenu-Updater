@@ -1599,9 +1599,7 @@ void downloadBoxart(void) {
 	mkdir("sdmc:/_nds/TWiLightMenu/boxart", 0777);
 	mkdir("sdmc:/_nds/TWiLightMenu/boxart/temp", 0777);
 	for(int i=0;i<(int)dirContents.size();i++) {
-		char boxartPath[256];
-		snprintf(boxartPath, sizeof(boxartPath), "sdmc:/_nds/TWiLightMenu/boxart/%s.png", dirContents[i].name.c_str());
-		if(access(boxartPath, F_OK) != 0 || getFileSize(boxartPath) == 0) { // Check if exists.
+		if (!hasBoxart(dirContents[i].name)) { // Check if exists.
 			char downloadMessage[512];
 			snprintf(downloadMessage, sizeof(downloadMessage), "Downloading\n%s.png", dirContents[i].name.c_str());
 			displayBottomMsg(downloadMessage);
@@ -1622,6 +1620,7 @@ void downloadBoxart(void) {
 			}
 			fclose(f_nds_file);	
 
+			char boxartPath[256];
 			snprintf(boxartPath, sizeof(boxartPath), "sdmc:/_nds/TWiLightMenu/boxart/temp/%s.png", dirContents[i].name.c_str());
 			Result downRes = downloadBoxartToFile(dirContents[i].name, dirContents[i].sha1, headerData, boxartPath);
 

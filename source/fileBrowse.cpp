@@ -25,6 +25,16 @@ int grabTID(FILE *ndsFile, char *buf) {
 	return !(read == 4);
 }
 
+bool hasBoxart(std::string fileName) {
+	char boxartPath[256];
+	snprintf(boxartPath, sizeof(boxartPath), "sdmc:/_nds/TWiLightMenu/boxart/%s.png", fileName.c_str());
+	if(access(boxartPath, F_OK) != 0 || getFileSize(boxartPath) == 0) { // Can not access or size is 0.
+		return false;
+	}
+
+	return true;
+}
+
 void findCompatibleFiles(vector<DirEntry>& dirContents, std::string currentDir="") {
 	struct stat st;
 	DIR *pdir = opendir(".");
@@ -45,7 +55,7 @@ void findCompatibleFiles(vector<DirEntry>& dirContents, std::string currentDir="
 			dirEntry.name = pent->d_name;
 
 			char scanningMessage[512];
-			snprintf(scanningMessage, sizeof(scanningMessage), "Scanning SD card for DS roms...\n\n(Press B to cancel)\n\n\n\n\n\n\n\n\n%s", dirEntry.name.c_str());
+			snprintf(scanningMessage, sizeof(scanningMessage), "Scanning SD card for roms...\n\n(Press B to cancel)\n\n\n\n\n\n\n\n\n%s", dirEntry.name.c_str());
 			displayBottomMsg(scanningMessage);
 
 			dirEntry.isDirectory = (st.st_mode & S_IFDIR) ? true : false;
@@ -75,7 +85,7 @@ void findCompatibleFiles(vector<DirEntry>& dirContents, std::string currentDir="
 						grabSha1 = true;
 					}
 
-					if (isCompatible) {
+					if (isCompatible && !hasBoxart(dirEntry.name)) {
 						dirEntry.path = currentDir + "/" + dirEntry.name;
 
 						if (grabSha1) { // TitleId not compatible. Use Sha1.

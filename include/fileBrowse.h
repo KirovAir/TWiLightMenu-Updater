@@ -21,6 +21,8 @@ typedef struct {
 	char gameCode[4];			//!< 4 characters for the game code.
 } sNDSHeadertitlecodeonly;
 
+bool hasBoxart(std::string fileName);
+
 void findCompatibleFiles(vector<DirEntry>& dirContents, std::string currentDir = "");
 
 void getDirectoryContents (vector<DirEntry>& dirContents);
