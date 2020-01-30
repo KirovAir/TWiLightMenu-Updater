@@ -8,22 +8,28 @@
 using namespace std;
 
 int file_count = 0;
+static std::string supportedExt [] = {
+	".nds",
+	".ds",
+	".dsi",
+	".nes", 
+	".sfc", 
+	".smc", 
+	".snes", 
+	".gb", 
+	".sgb",
+	".gbc",
+	".gba",
+	".gg",
+	".gen",
+	".sms",
+	".fds",
+	".bin"
+};
 
 extern bool continueNdsScan;
 
 extern void displayBottomMsg(const char* text);
-
-/**
- * Get the title ID.
- * @param ndsFile DS ROM image.
- * @param buf Output buffer for title ID. (Must be at least 4 characters.)
- * @return 0 on success; non-zero on error.
- */
-int grabTID(FILE *ndsFile, char *buf) {
-	fseek(ndsFile, offsetof(sNDSHeadertitlecodeonly, gameCode), SEEK_SET);
-	size_t read = fread(buf, 1, 4, ndsFile);
-	return !(read == 4);
-}
 
 bool hasBoxart(std::string fileName) {
 	char boxartPath[256];
@@ -35,7 +41,24 @@ bool hasBoxart(std::string fileName) {
 	return true;
 }
 
-void findCompatibleFiles(vector<DirEntry>& dirContents, std::string currentDir="") {
+bool hasExtension(std::string fileName, std::string ext) {
+	int extlen = ext.length();
+	if (strcasecmp(fileName.substr(fileName.length() - extlen, extlen).c_str(), ext.c_str()) == 0) {
+		return true;
+	}
+	return false;
+}
+
+bool isSupportedRom(std::string fileName) {
+    for(auto& ext : supportedExt) {
+        if (hasExtension(fileName, ext)) {								
+			return true;
+		}
+    }
+	return false;
+}
+
+void findCompatibleFiles(vector<DirEntry>& dirContents, std::string currentDir) {
 	struct stat st;
 	DIR *pdir = opendir(".");
 
@@ -57,38 +80,16 @@ void findCompatibleFiles(vector<DirEntry>& dirContents, std::string currentDir="
 			char scanningMessage[512];
 			snprintf(scanningMessage, sizeof(scanningMessage), "Scanning SD card for roms...\n\n(Press B to cancel)\n\n\n\n\n\n\n\n\n%s", dirEntry.name.c_str());
 			displayBottomMsg(scanningMessage);
-
 			dirEntry.isDirectory = (st.st_mode & S_IFDIR) ? true : false;
 				if(!(dirEntry.isDirectory) && dirEntry.name.length() >= 4) {
-					bool isCompatible = false;
-					bool grabSha1 = false;
-					if (strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".nds") == 0
-					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-3, 3).c_str(), ".ds") == 0
-					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".dsi") == 0) {
-						isCompatible = true;
-					} else if (strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".nes") == 0
-					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".sfc") == 0
-					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".smc") == 0
-					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".sne") == 0
-					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-3, 3).c_str(), ".gb") == 0
-					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".sgb") == 0
-					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".gbc") == 0
-					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".gba") == 0
-					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".nds") == 0
-					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-3, 3).c_str(), ".gg") == 0
-					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".gen") == 0
-					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".sms") == 0
-					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".fds") == 0
-					|| strcasecmp(dirEntry.name.substr(dirEntry.name.length()-4, 4).c_str(), ".bin") == 0) 
-					{
-						isCompatible = true;
-						grabSha1 = true;
-					}
-
+					bool isCompatible = isSupportedRom(dirEntry.name);
+					// Skip sha1 for DS titles. Header (titleId) and filename are sufficient.
+					bool skipSha1 = hasExtension(dirEntry.name, ".nds") || hasExtension(dirEntry.name, ".ds") || hasExtension(dirEntry.name, ".dsi");
+					
 					if (isCompatible && !hasBoxart(dirEntry.name)) {
 						dirEntry.path = currentDir + "/" + dirEntry.name;
 
-						if (grabSha1) { // TitleId not compatible. Use Sha1.
+						if (!skipSha1) {
 							dirEntry.sha1 = SHA1::from_file(dirEntry.path);
 						}
 

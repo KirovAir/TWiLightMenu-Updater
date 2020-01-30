@@ -23,7 +23,7 @@ typedef struct {
 
 bool hasBoxart(std::string fileName);
 
-void findCompatibleFiles(vector<DirEntry>& dirContents, std::string currentDir = "");
+void findCompatibleFiles(vector<DirEntry>& dirContents, std::string currentDir);
 
 void getDirectoryContents (vector<DirEntry>& dirContents);
 
