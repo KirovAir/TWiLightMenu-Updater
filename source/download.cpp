@@ -219,9 +219,12 @@ Result downloadBoxartToFile(std::string filename, std::string sha1, std::string 
 	}
 
 	std::string borderStyleStr = "None";
-	if (borderStyle == 1) {
+	if (borderStyle == 1 || borderStyle == 2) {
 		borderStyleStr = "Line";
-	} else if (borderStyle == 2) {
+		if (borderStyle == 2) {
+			borderStyleStr += "&BoxartBorderColor=0xFFFFFFFF";
+		}
+	} else if (borderStyle == 3) {
 		borderStyleStr = "NintendoDSi";
 	}
 
@@ -1530,7 +1533,7 @@ void downloadBoxart(void) {
 		boxartSize = 0;
 	}
 
-	options = {"None (Default)", "Line", "DSi Theme"};
+	options = {"None (Default)", "Line (Black)", "Line (White)", "DSi Theme"};
 	int borderStyle = displayMenu("Add a boxart border style?", options, "B: Back   A: Choose", hDown);
 	if (borderStyle == -1) {
 		borderStyle = 0;
@@ -1555,7 +1558,7 @@ void downloadBoxart(void) {
 
 		if (hasBoxart(romFile.name)) { // Check if exists.
 			if (overwrite == -1) {
-				snprintf(downloadMessage, sizeof(downloadMessage), "Downloading\n%s.png\n\nBoxart already exists. Overwrite?\n\n\n\nA: Yes    B: No    X: Overwrite all    Y: Skip all", romFile.name.c_str());
+				snprintf(downloadMessage, sizeof(downloadMessage), "Downloading\n%s.png\n\nBoxart already exists. Overwrite?\n\n\n\n\n\n\n\nA: Yes    B: No    X: Overwrite all    Y: Skip all", romFile.name.c_str());
 				hDown = displayChoice(downloadMessage);
 				if(hDown & KEY_B) {
 					continue;
