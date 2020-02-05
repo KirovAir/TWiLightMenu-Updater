@@ -10,7 +10,7 @@
 #include "inifile.h"
 #include "keyboard.h"
 #include "thread.h"
-#include "base64.h"
+#include "sha1.hpp"
 
 extern "C" {
 	#include "cia.h"
@@ -166,7 +166,7 @@ Result downloadToFile(std::string url, std::string path) {
 	return 0;
 }
 
-Result downloadBoxartToFile(std::string filename, std::string sha1, std::string header, std::string targetPath) {
+Result downloadBoxartToFile(std::string filename, std::string sha1, std::string header, std::string targetPath, int boxartSize, int borderStyle) {
 	Result ret = 0;
 	void *socubuf = memalign(0x1000, 0x100000);
 	if(!socubuf) {
@@ -180,7 +180,7 @@ Result downloadBoxartToFile(std::string filename, std::string sha1, std::string 
 	}
 
 	CURL *hnd = curl_easy_init();
-	ret = setupContext(hnd, "https://twilight.jessesander.nl/api");
+	ret = setupContext(hnd, "http://boxart.kirovair.com/api");
 	if(ret != 0) {
 		socExit();
 		free(result_buf);
@@ -208,10 +208,30 @@ Result downloadBoxartToFile(std::string filename, std::string sha1, std::string 
 		return DL_ERROR_WRITEFILE;
 	}
 
+	int boxartWidth = 128;
+	int boxartHeight = 115;
+	if (boxartSize == 1) {
+		boxartWidth = 210;
+		boxartHeight = 146;
+	} else if (boxartSize == 2) {
+		boxartWidth = 256;
+		boxartHeight = 192;
+	}
+
+	std::string borderStyleStr = "None";
+	if (borderStyle == 1) {
+		borderStyleStr = "Line";
+	} else if (borderStyle == 2) {
+		borderStyleStr = "NintendoDSi";
+	}
+
 	std::string formdata =	"Filename=" + std::string(curl_easy_escape(hnd, filename.c_str(), filename.size())) + 
 							"&Sha1=" + sha1 + 
-							"&Header=" + std::string(curl_easy_escape(hnd, header.c_str(), header.size())) ;
-
+							"&Header=" + std::string(curl_easy_escape(hnd, header.c_str(), header.size())) +
+							"&BoxartWidth=" + std::to_string(boxartWidth) +
+							"&BoxartHeight=" + std::to_string(boxartHeight) + 
+							"&BoxartBorderStyle=" + borderStyleStr;
+	
 	curl_easy_setopt(hnd, CURLOPT_POSTFIELDS, formdata.c_str());
 
 	CURLcode cres = curl_easy_perform(hnd);
@@ -1440,7 +1460,7 @@ u32 displayChoice(std::string text) {
 		hidScanInput();
 		const u32 hDown = hidKeysDown();
 
-		if((hDown & KEY_A) || (hDown & KEY_X) || (hDown & KEY_B)) {
+		if((hDown & KEY_A) || (hDown & KEY_X) || (hDown & KEY_B) || (hDown & KEY_Y)) {
 			return hDown;
 		}
 	}
@@ -1465,7 +1485,7 @@ void downloadBoxart(void) {
 	vector<DirEntry> dirContents;
 	std::string scanDir;
 
-	const u32 hDown = displayChoice("Would you like to choose a directory, or scan\nthe full card?\n\n\n\n\n\n\n\n\n\nB: Cancel   A: Choose Directory   X: Full SD");
+	u32 hDown = displayChoice("Would you like to choose a directory, or scan\nthe full card?\n\n\n\n\n\n\n\n\n\nB: Cancel   A: Choose Directory   X: Full SD");
 
 	if(hDown & KEY_A) {
 		chdir("sdmc:/");
@@ -1474,13 +1494,12 @@ void downloadBoxart(void) {
 		while(!dirChosen) {
 			vector<string> dirList;
 			getDirectoryContents(dirContents);
-			for(uint i=0;i<dirContents.size();i++) {
-				if(dirContents[i].isDirectory) {
-					dirList.push_back(dirContents[i].name);
+			for (auto &dir : dirContents) {
+				if(dir.isDirectory) {
+					dirList.push_back(dir.name);
 				}
 			}
 
-			u32 hDown;
 			int selectedOption = displayMenu("Select a directory..", dirList, "B: Back   A: Open   X: Choose", hDown);
 
 			if (hDown & KEY_A) {
@@ -1492,8 +1511,8 @@ void downloadBoxart(void) {
 				chdir("..");
 			} else if(hDown & KEY_X) {
 				chdir(dirList[selectedOption].c_str());
-				char path[1024];
-				getcwd(path, sizeof(path));
+				char path[PATH_MAX];
+				getcwd(path, PATH_MAX);
 				scanDir = path;
 				dirChosen = true;
 				break;
@@ -1503,6 +1522,18 @@ void downloadBoxart(void) {
 		return;
 	} else if(hDown & KEY_X) {
 		scanDir = "sdmc:/";
+	}
+
+	vector<string> options = {"Normal (128x115, default)", "Large (210x146)", "Full Screen (256x192)"};
+	int boxartSize = displayMenu("Choose a boxart size", options, "B: Back   A: Choose", hDown);
+	if (boxartSize == -1) {
+		boxartSize = 0;
+	}
+
+	options = {"None (Default)", "Line", "DSi Theme"};
+	int borderStyle = displayMenu("Add a boxart border style?", options, "B: Back   A: Choose", hDown);
+	if (borderStyle == -1) {
+		borderStyle = 0;
 	}
 
 	displayBottomMsg("Scanning SD card for DS roms...\n\n(Press B to cancel)");
@@ -1516,46 +1547,50 @@ void downloadBoxart(void) {
 
 	mkdir("sdmc:/_nds/TWiLightMenu/boxart", 0777);
 	mkdir("sdmc:/_nds/TWiLightMenu/boxart/temp", 0777);
-	for(int i=0;i<(int)dirContents.size();i++) {
-		if (!hasBoxart(dirContents[i].name)) { // Check if exists.
-			char downloadMessage[512];
-			snprintf(downloadMessage, sizeof(downloadMessage), "Downloading\n%s.png", dirContents[i].name.c_str());
-			displayBottomMsg(downloadMessage);
-			
-			// Make a base64 string of first 328 bytes.
-			// This will replace titleId with more info to determine DS(i) and gb(c) titles. (And more in the future)
-			std::string headerData;
-			FILE *f_nds_file = fopen(dirContents[i].path.c_str(), "rb");
-			if (f_nds_file) {
-				fseek(f_nds_file, 0, SEEK_END);
-				off_t fsize = ftell(f_nds_file); // Get size
-				fseek(f_nds_file, 0, SEEK_SET);
-				if (fsize > 328) {
-					BYTE header[328]; 
-					fread(header, 1, 328, f_nds_file);
-					headerData = base64_encode(header,sizeof(header));
+	int overwrite = -1;
+	for (auto &romFile : dirContents) {
+		char downloadMessage[512];
+		snprintf(downloadMessage, sizeof(downloadMessage), "Downloading\n%s.png", romFile.name.c_str());
+		displayBottomMsg(downloadMessage);
+
+		if (hasBoxart(romFile.name)) { // Check if exists.
+			if (overwrite == -1) {
+				snprintf(downloadMessage, sizeof(downloadMessage), "Downloading\n%s.png\n\nBoxart already exists. Overwrite?\n\n\n\nA: Yes    B: No    X: Overwrite all    Y: Skip all", romFile.name.c_str());
+				hDown = displayChoice(downloadMessage);
+				if(hDown & KEY_B) {
+					continue;
+				} else if(hDown & KEY_X) {
+					overwrite = 1;
+				} else if(hDown & KEY_Y) {
+					overwrite = 0;
 				}
+			} else if (overwrite == 0) {
+				continue;
 			}
-			fclose(f_nds_file);	
+		}
 
-			char boxartPath[256];
-			snprintf(boxartPath, sizeof(boxartPath), "sdmc:/_nds/TWiLightMenu/boxart/temp/%s.png", dirContents[i].name.c_str());
-			Result downRes = downloadBoxartToFile(dirContents[i].name, dirContents[i].sha1, headerData, boxartPath);
+		// Make a base64 string of first 328 bytes.
+		// This will replace titleId with more info to determine DS(i) and gb(c) titles. (And more in the future)
+		std::string headerData = getHeaderData(romFile.path.c_str());
+								
+		// Skip sha1 for DS titles. Header (titleId) and filename are sufficient.
+		std::string sha1;
+		if (!hasExtension(romFile.name, ".nds") && !hasExtension(romFile.name, ".ds") && !hasExtension(romFile.name, ".dsi")) {
+			sha1 = SHA1::from_file(romFile.path);
+		}
 
-			if (downRes != 0) {
-				snprintf(downloadMessage, sizeof(downloadMessage), "Could not download\n%s\n\nA: Continue    B: Cancel", dirContents[i].name.c_str());
-				displayBottomMsg(downloadMessage);
-				while (1) {
-					gspWaitForVBlank();
-					hidScanInput();
-					const u32 hDown = hidKeysDown();
+		char boxartPath[512];
+		snprintf(boxartPath, sizeof(boxartPath), "sdmc:/_nds/TWiLightMenu/boxart/temp/%s.png", romFile.name.c_str());
+		Result downRes = downloadBoxartToFile(romFile.name, sha1, headerData, boxartPath, boxartSize, borderStyle);
 
-					if (hDown & KEY_A) {
-						break;
-					} else if(hDown & KEY_B) {
-						return;
-					}
-				}
+		if (downRes != 0) {
+			snprintf(downloadMessage, sizeof(downloadMessage), "Could not download\n%s\n\nA: Continue    B: Cancel", romFile.name.c_str());
+			hDown = displayChoice(downloadMessage);
+
+			if (hDown & KEY_A) {
+				break;
+			} else if(hDown & KEY_B) {
+				return;
 			}
 		}
 	}
@@ -1564,21 +1599,19 @@ void downloadBoxart(void) {
 	getDirectoryContents(dirContents);
 
 	displayBottomMsg("Cleaning up...");
-	for(int i=0;i<(int)dirContents.size();i++) {
-		if(dirContents[i].size == 0) {
-			char path[256];
-			snprintf(path, sizeof(path), "sdmc:/_nds/TWiLightMenu/boxart/temp/%s", dirContents[i].name.c_str());
-			deleteFile(path);
+	for (auto &boxart : dirContents) {
+		char tempPath[512];
+		snprintf(tempPath, sizeof(tempPath), "sdmc:/_nds/TWiLightMenu/boxart/temp/%s", boxart.name.c_str());
+		if(boxart.size == 0) {
+			deleteFile(tempPath);
 		} else {
-			char tempPath[256];
-			snprintf(tempPath, sizeof(tempPath), "sdmc:/_nds/TWiLightMenu/boxart/temp/%s", dirContents[i].name.c_str());
-			char path[256];
-			snprintf(path, sizeof(path), "sdmc:/_nds/TWiLightMenu/boxart/%s", dirContents[i].name.c_str());
+			char path[512];
+			snprintf(path, sizeof(path), "sdmc:/_nds/TWiLightMenu/boxart/%s", boxart.name.c_str());
 			deleteFile(path);
 			rename(tempPath, path);
 		}
-		rmdir("sdmc:/_nds/TWiLightMenu/boxart/temp");
 	}
+	rmdir("sdmc:/_nds/TWiLightMenu/boxart/temp");
 	doneMsg();
 }
 

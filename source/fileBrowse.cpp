@@ -3,7 +3,7 @@
 #include <dirent.h>
 #include <vector>
 #include <unistd.h>
-#include "sha1.hpp"
+#include "base64.h"
 
 using namespace std;
 
@@ -29,6 +29,24 @@ static std::string supportedExt [] = {
 extern bool continueNdsScan;
 
 extern void displayBottomMsg(const char* text);
+
+std::string getHeaderData(const char* path) {
+	std::string headerData;
+	FILE *f_nds_file = fopen(path, "rb");
+	if (f_nds_file) {
+		fseek(f_nds_file, 0, SEEK_END);
+		off_t fsize = ftell(f_nds_file); // Get size
+		fseek(f_nds_file, 0, SEEK_SET);
+		if (fsize > 328) {
+			BYTE header[328]; 
+			fread(header, 1, 328, f_nds_file);
+			headerData = base64_encode(header,sizeof(header));
+		}
+	}
+	fclose(f_nds_file);
+
+	return headerData;
+}
 
 bool hasBoxart(std::string fileName) {
 	char boxartPath[256];
@@ -82,16 +100,9 @@ void findCompatibleFiles(vector<DirEntry>& dirContents, std::string currentDir) 
 			dirEntry.isDirectory = (st.st_mode & S_IFDIR) ? true : false;
 				if(!(dirEntry.isDirectory) && dirEntry.name.length() >= 4) {
 					bool isCompatible = isSupportedRom(dirEntry.name);
-					// Skip sha1 for DS titles. Header (titleId) and filename are sufficient.
-					bool skipSha1 = hasExtension(dirEntry.name, ".nds") || hasExtension(dirEntry.name, ".ds") || hasExtension(dirEntry.name, ".dsi");
-					
-					if (isCompatible && !hasBoxart(dirEntry.name)) {
+
+					if (isCompatible) {
 						dirEntry.path = currentDir + "/" + dirEntry.name;
-
-						if (!skipSha1) {
-							dirEntry.sha1 = SHA1::from_file(dirEntry.path);
-						}
-
 						dirContents.push_back(dirEntry);
 					}
 				} else if (dirEntry.isDirectory

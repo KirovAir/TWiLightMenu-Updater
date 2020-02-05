@@ -11,7 +11,6 @@ using namespace std;
 struct DirEntry {
 	string name;
 	string path;
-	string sha1;
 	bool isDirectory;
 	off_t size;
 };
@@ -20,6 +19,10 @@ typedef struct {
 	char gameTitle[12];			//!< 12 characters for the game title.
 	char gameCode[4];			//!< 4 characters for the game code.
 } sNDSHeadertitlecodeonly;
+
+std::string getHeaderData(const char* path);
+
+bool hasExtension(std::string fileName, std::string ext);
 
 bool hasBoxart(std::string fileName);
 
