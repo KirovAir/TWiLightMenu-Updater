@@ -7,7 +7,6 @@
 
 using namespace std;
 
-int file_count = 0;
 static std::string supportedExt [] = {
 	".nds",
 	".ds",
@@ -94,7 +93,6 @@ void findCompatibleFiles(vector<DirEntry>& dirContents, std::string currentDir) 
 						}
 
 						dirContents.push_back(dirEntry);
-						file_count++;
 					}
 				} else if (dirEntry.isDirectory
 				&& dirEntry.name.compare(".") != 0

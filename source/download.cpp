@@ -1364,86 +1364,6 @@ void updateCheats(void) {
 	doneMsg();
 }
 
-const char* getBoxartRegion(char tid_region) {
-	// European boxart languages.
-	static const char *const ba_langs_eur[] = {
-		"EN",	// Japanese (English used in place)
-		"EN",	// English
-		"FR",	// French
-		"DE",	// German
-		"IT",	// Italian
-		"ES",	// Spanish
-		"ZHCN",	// Simplified Chinese
-		"KO",	// Korean
-	};
-	CIniFile ini("sdmc:/_nds/TWiLightMenu/settings.ini");
-	int language = ini.GetInt("SRLOADER", "LANGUAGE", -1);
-	const char *ba_region;
-
-	switch (tid_region) {
-		case 'E':
-		case 'T':
-			ba_region = "US";	// USA
-			break;
-		case 'J':
-			ba_region = "JA";	// Japanese
-			break;
-		case 'K':
-			ba_region = "KO";	// Korean
-			break;
-
-		case 'O':			// USA/Europe
-			// if(region == CFG_REGION_USA) {
-				// System is USA region.
-				// Get the USA boxart if it's available.
-				ba_region = "EN";
-				break;
-			// }
-			// fall-through
-		case 'P':			// Europe
-		default:
-			// System is not USA region.
-			// Get the European boxart that matches the system's language.
-			// TODO: Check country code for Australia.
-			// This requires parsing the Config savegame. (GetConfigInfoBlk2())
-			// Reference: https://3dbrew.org/wiki/Config_Savegame
-			if(language == -1)
-				ba_region = "EN";	// TODO: make this actually set to the console's language
-			else
-				ba_region = ba_langs_eur[language];
-			break;
-
-		case 'U':
-			// Alternate country code for Australia.
-			ba_region = "AU";
-			break;
-
-		// European country-specific localizations.
-		case 'D':
-			ba_region = "DE";	// German
-			break;
-		case 'F':
-			ba_region = "FR";	// French
-			break;
-		case 'H':
-			ba_region = "NL";	// Dutch
-			break;
-		case 'I':
-			ba_region = "IT";	// Italian
-			break;
-		case 'R':
-			ba_region = "RU";	// Russian
-			break;
-		case 'S':
-			ba_region = "ES";	// Spanish
-			break;
-		case '#':
-			ba_region = "HB"; // Homebrew
-			break;
-	}
-	return ba_region;
-}
-
 void scanToCancelBoxArt(void) {
 	while(continueNdsScan) {
 		hidScanInput();
@@ -1454,145 +1374,143 @@ void scanToCancelBoxArt(void) {
 	}
 }
 
-void downloadExtras(void) {
-	std::string extrasOptions[] = {"Boxart", "Themes"};
+int displayMenu(std::string text, std::vector<std::string> menu, std::string options, u32 &hDown) {
+    const int max = 10;
+	int menuMax = menu.size() - 1;
+	int window = max - 1;
 	int selectedOption = 0;
+
+	while(1) {
+		gspWaitForVBlank();
+		hidScanInput();
+		hDown = hidKeysDown();
+
+		if((hDown & KEY_A) || (hDown & KEY_X)) {
+			return selectedOption;
+		} else if(hDown & KEY_B) {
+			return -1;
+		} else if(hDown & KEY_UP) {
+			selectedOption--;
+			if(selectedOption < 0) {	
+				selectedOption = menuMax;
+			}
+		} else if(hDown & KEY_DOWN) {
+			selectedOption++;
+			if(selectedOption > menuMax) {
+				selectedOption = 0;
+			}
+		}
+		
+		std::string tmpText = text + "\n";
+
+		if (selectedOption >= max && selectedOption > window) {
+			window = selectedOption;
+		}
+		if (selectedOption < max && selectedOption < (window - max + 1)) {
+		    window = max - 1 + selectedOption;
+		}
+
+		int adj = window - max + 1;		
+		for (int i = 0; i < max; i++)
+		{		     
+			int adjIndex = i + adj;
+
+			if (i > menuMax) {
+				tmpText += "\n";
+				continue;
+			}
+
+			if(adjIndex == selectedOption) {
+				tmpText += "> " + menu[adjIndex] + "\n";
+			} else {
+				tmpText += "  " + menu[adjIndex] + "\n";
+			}
+		}
+
+		tmpText += options;
+		displayBottomMsg(tmpText.c_str());
+	}
+}
+
+u32 displayChoice(std::string text) {
+	displayBottomMsg(text.c_str());
+
 	while(1) {
 		gspWaitForVBlank();
 		hidScanInput();
 		const u32 hDown = hidKeysDown();
-		if(hDown & KEY_A) {
-			if(selectedOption == 0) {
-				downloadBoxart();
-			} else {
-				downloadThemes();
-			}
-		} else if(hDown & KEY_B) {
-			return;
-		} else if(hDown & KEY_UP) {
-			if(selectedOption > 0) {
-				selectedOption--;
-			}
-		} else if(hDown & KEY_DOWN) {
-			if(selectedOption < 1) {
-				selectedOption++;
-			}
+
+		if((hDown & KEY_A) || (hDown & KEY_X) || (hDown & KEY_B)) {
+			return hDown;
 		}
-		std::string extrasText = "What would you like to download?\n";
-		for(int i=0;i<2;i++) {
-			if(i == selectedOption) {
-				extrasText += "> " + extrasOptions[i] + "\n";
-			} else {
-				extrasText += "  " + extrasOptions[i] + "\n";
-			}
-		}
-		extrasText += "\n\n\n\n\n\n\n\n";
-		extrasText += "B: Back   A: Choose";
-		displayBottomMsg(extrasText.c_str());
+	}
+}
+
+void downloadExtras(void) {
+	vector<string> extrasOptions = {"Boxart", "Themes"};
+	u32 hDown;
+	int selectedOption = displayMenu("What would you like to download?", extrasOptions, "B: Back   A: Choose", hDown);
+	if (selectedOption == -1) {
+		return;
+	}
+
+	if(selectedOption == 0) {
+		downloadBoxart();
+	} else {
+		downloadThemes();
 	}
 }
 
 void downloadBoxart(void) {
-
 	vector<DirEntry> dirContents;
 	std::string scanDir;
 
-	displayBottomMsg("Would you like to choose a directory, or scan\nthe full card?\n\n\n\n\n\n\n\n\n\nB: Cancel   A: Choose Directory   X: Full SD");
+	const u32 hDown = displayChoice("Would you like to choose a directory, or scan\nthe full card?\n\n\n\n\n\n\n\n\n\nB: Cancel   A: Choose Directory   X: Full SD");
 
-	while(1) {
-		gspWaitForVBlank();
-		hidScanInput();
-		const u32 hDown = hidKeysDown();
+	if(hDown & KEY_A) {
+		chdir("sdmc:/");
+		bool dirChosen = false;
 
-		if(hDown & KEY_A) {
-			chdir("sdmc:/");
-			bool dirChosen = false;
-			uint selectedDir = 0;
-			uint keyRepeatDelay = 0;
-			while(!dirChosen) {
-				getDirectoryContents(dirContents);
-				for(uint i=0;i<dirContents.size();i++) {
-					if(!dirContents[i].isDirectory) {
-						dirContents.erase(dirContents.begin()+i);
-					}
-				}
-				while(1) {
-					gspWaitForVBlank();
-					hidScanInput();
-					const u32 hDown = hidKeysDown();
-					const u32 hHeld = hidKeysHeld();
-					if(keyRepeatDelay)	keyRepeatDelay--;
-					if(hDown & KEY_A) {
-						chdir(dirContents[selectedDir].name.c_str());
-						selectedDir = 0;
-						break;
-					} else if(hDown & KEY_B) {
-						char path[PATH_MAX];
-						getcwd(path, PATH_MAX);
-						if(strcmp(path, "sdmc:/") == 0)	return;
-						chdir("..");
-						selectedDir = 0;
-						break;
-					}	else if(hDown & KEY_X) {
-						chdir(dirContents[selectedDir].name.c_str());
-						char path[1024];
-						getcwd(path, sizeof(path));
-						scanDir = path;
-						dirChosen = true;
-						break;
-					} else if(hHeld & KEY_UP && !keyRepeatDelay) {
-						if(selectedDir > 0) {
-							selectedDir--;
-							keyRepeatDelay = 3;
-						}
-					} else if(hHeld & KEY_DOWN && !keyRepeatDelay) {
-						if(selectedDir < dirContents.size()-1) {
-							selectedDir++;
-							keyRepeatDelay = 3;
-						}
-					} else if(hHeld & KEY_LEFT && !keyRepeatDelay) {
-						selectedDir -= 10;
-						if(selectedDir < 0) {
-							selectedDir = 0;
-						}
-						keyRepeatDelay = 3;
-					} else if(hHeld & KEY_RIGHT && !keyRepeatDelay) {
-						selectedDir += 10;
-						if(selectedDir > dirContents.size()) {
-							selectedDir = dirContents.size()-1;
-						}
-						keyRepeatDelay = 3;
-					}
-					std::string dirs;
-					for(uint i=(selectedDir<10) ? 0 : selectedDir-10;i<dirContents.size()&&i<((selectedDir<10) ? 11 : selectedDir+1);i++) {
-						if(i == selectedDir) {
-							dirs += "> " + dirContents[i].name + "\n";
-						} else {
-							dirs += "  " + dirContents[i].name + "\n";
-						}
-					}
-					for(uint i=0;i<((dirContents.size()<10) ? 11-dirContents.size() : 0);i++) {
-						dirs += "\n";
-					}
-					dirs += "B: Back   A: Open   X: Choose";
-					displayBottomMsg(dirs.c_str());
+		while(!dirChosen) {
+			vector<string> dirList;
+			getDirectoryContents(dirContents);
+			for(uint i=0;i<dirContents.size();i++) {
+				if(dirContents[i].isDirectory) {
+					dirList.push_back(dirContents[i].name);
 				}
 			}
-			break;
-		} else if(hDown & KEY_B) {
-			return;
-		} else if(hDown & KEY_X) {
-			scanDir = "sdmc:/";
-			break;
+
+			u32 hDown;
+			int selectedOption = displayMenu("Select a directory..", dirList, "B: Back   A: Open   X: Choose", hDown);
+
+			if (hDown & KEY_A) {
+				chdir(dirList[selectedOption].c_str());
+			} else if(hDown & KEY_B) {
+				char path[PATH_MAX];
+				getcwd(path, PATH_MAX);
+				if(strcmp(path, "sdmc:/") == 0)	return;
+				chdir("..");
+			} else if(hDown & KEY_X) {
+				chdir(dirList[selectedOption].c_str());
+				char path[1024];
+				getcwd(path, sizeof(path));
+				scanDir = path;
+				dirChosen = true;
+				break;
+			}
 		}
+	} else if(hDown & KEY_B) {
+		return;
+	} else if(hDown & KEY_X) {
+		scanDir = "sdmc:/";
 	}
 
 	displayBottomMsg("Scanning SD card for DS roms...\n\n(Press B to cancel)");
-
 	chdir(scanDir.c_str());
-	dirContents.clear(); // KirovAir: This was an annoying fix.. clears previous folder input.
+	
 	continueNdsScan = true;
 	createThread((ThreadFunc)scanToCancelBoxArt);
+	dirContents.clear(); // KirovAir: This was an annoying fix.. clears previous folder input.
 	findCompatibleFiles(dirContents, scanDir.substr(0, scanDir.length()-1));
 	continueNdsScan = false;
 
@@ -1665,101 +1583,33 @@ void downloadBoxart(void) {
 }
 
 void downloadThemes(void) {
-	int selectedTwlTheme = 0;
-	int keyRepeatDelay = 0;
-	std::string themeNames[] = {"DSi theme", "3DS theme", "R4 theme", "Acekard theme"};
 	std::string themeFolders[] = {"dsimenu", "3dsmenu", "r4menu", "akmenu"};
-	chooseTWlTheme:
-	while(1) {
-		gspWaitForVBlank();
-		hidScanInput();
-		const u32 hDown = hidKeysDown();
-		const u32 hHeld = hidKeysHeld();
-		if(keyRepeatDelay)	keyRepeatDelay--;
-		if(hDown & KEY_A) {
-			break;
-		} else if(hDown & KEY_B) {
+
+	while (true) {
+		vector<string> themeNames = {"DSi theme", "3DS theme", "R4 theme", "Acekard theme"};
+
+		u32 hDown;
+		int selectedOption = displayMenu("Which TWiLight theme would you like\nto download themes for?", themeNames, "B: Back   A: Choose", hDown);
+		if (selectedOption == -1) {
 			return;
-		} else if(hHeld & KEY_UP && !keyRepeatDelay) {
-			if(selectedTwlTheme > 0) {
-				selectedTwlTheme--;
-				keyRepeatDelay = 3;
-			}
-		} else if(hHeld & KEY_DOWN && !keyRepeatDelay) {
-			if(selectedTwlTheme < 3) {
-				selectedTwlTheme++;
-				keyRepeatDelay = 3;
-			}
 		}
-		std::string themesText = "Which TWiLight theme would you like\nto download themes for?\n";
-		for(int i=0;i<4;i++) {
-			if(i == selectedTwlTheme) {
-				themesText += "> " + themeNames[i] + "\n";
-			} else {
-				themesText += "  " + themeNames[i] + "\n";
-			}
+
+		mkdir(("sdmc:/_nds/TWiLightMenu/"+themeFolders[selectedOption]).c_str(), 0777);
+		mkdir(("sdmc:/_nds/TWiLightMenu/"+themeFolders[selectedOption]+"/themes/").c_str(), 0777);
+
+		displayBottomMsg("Getting theme list...");
+		std::vector<ThemeEntry> themeList = getThemeList("DS-Homebrew/twlmenu-extras", "_nds/TWiLightMenu/"+themeFolders[selectedOption]+"/themes");
+		themeNames.clear();		
+		for(uint i=0;i<themeList.size();i++) {
+			themeNames.push_back(themeList[i].name);
 		}
-		themesText += "\n\n\n\n\n";
-		themesText += "B: Back   A: Choose";
-		displayBottomMsg(themesText.c_str());
-	}
 
-	displayBottomMsg("Getting theme list...");
-
-	std::vector<ThemeEntry> themeList;
-	themeList = getThemeList("DS-Homebrew/twlmenu-extras", "_nds/TWiLightMenu/"+themeFolders[selectedTwlTheme]+"/themes");
-	mkdir(("sdmc:/_nds/TWiLightMenu/"+themeFolders[selectedTwlTheme]).c_str(), 0777);
-	mkdir(("sdmc:/_nds/TWiLightMenu/"+themeFolders[selectedTwlTheme]+"/themes/").c_str(), 0777);
-
-	int selectedTheme = 0;
-	while(1) {
-		gspWaitForVBlank();
-		hidScanInput();
-		const u32 hDown = hidKeysDown();
-		const u32 hHeld = hidKeysHeld();
-		if(keyRepeatDelay)	keyRepeatDelay--;
+		// KirovAir TODO test this.
+		selectedOption = displayMenu("Select a theme:", themeNames, "B: Back   A: Choose", hDown);
 		if(hDown & KEY_A) {
-			mkdir((themeList[selectedTheme].sdPath).c_str(), 0777);
-			displayBottomMsg(("Downloading: "+themeList[selectedTheme].name).c_str());
-			downloadTheme(themeList[selectedTheme].path);
-		} else if(hDown & KEY_B) {
-			selectedTheme = 0;
-			goto chooseTWlTheme;
-		} else if(hHeld & KEY_UP && !keyRepeatDelay) {
-			if(selectedTheme > 0) {
-				selectedTheme--;
-				keyRepeatDelay = 3;
-			}
-		} else if(hHeld & KEY_DOWN && !keyRepeatDelay) {
-			if(selectedTheme < (int)themeList.size()-1) {
-				selectedTheme++;
-				keyRepeatDelay = 3;
-			}
-		} else if(hHeld & KEY_LEFT && !keyRepeatDelay) {
-			selectedTheme -= 10;
-			if(selectedTheme < 0) {
-				selectedTheme = 0;
-			}
-			keyRepeatDelay = 3;
-		} else if(hHeld & KEY_RIGHT && !keyRepeatDelay) {
-			selectedTheme += 10;
-			if(selectedTheme > (int)themeList.size()) {
-				selectedTheme = themeList.size()-1;
-			}
-			keyRepeatDelay = 3;
+			mkdir((themeList[selectedOption].sdPath).c_str(), 0777);
+			displayBottomMsg(("Downloading: "+themeList[selectedOption].name).c_str());
+			downloadTheme(themeList[selectedOption].path);
 		}
-		std::string themesText;
-		for(int i=(selectedTheme<10) ? 0 : selectedTheme-10;i<(int)themeList.size()&&i<((selectedTheme<10) ? 11 : selectedTheme+1);i++) {
-			if(i == selectedTheme) {
-				themesText += "> " + themeList[i].name + "\n";
-			} else {
-				themesText += "  " + themeList[i].name + "\n";
-			}
-		}
-		for(uint i=0;i<((themeList.size()<10) ? 11-themeList.size() : 0);i++) {
-			themesText += "\n";
-		}
-		themesText += "B: Back   A: Choose";
-		displayBottomMsg(themesText.c_str());
 	}
 }
