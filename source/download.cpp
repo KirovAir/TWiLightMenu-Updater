@@ -829,94 +829,51 @@ std::string chooseCommit(std::string repo, std::string title, bool showExitText)
 		}
 	}
 
-	int selectedCommit = 0;
-	int keyRepeatDelay = 0;
-	showCommitList:
-	while(1) {
-		gspWaitForVBlank();
-		hidScanInput();
-		const u32 hDown = hidKeysDown();
-		const u32 hHeld = hidKeysHeld();
-		if(keyRepeatDelay)	keyRepeatDelay--;
-		if(hDown & KEY_A) {
-			break;
-		} else if(hDown & KEY_B) {
+	while (1) {
+		u32 hDown;
+		int selectedCommit = displayMenu("Choose a commit for commit notes:", jsonBody, "B: Back   A: Info", hDown);
+		if (selectedCommit == -1) {
 			return "";
-		} else if(hHeld & KEY_UP && !keyRepeatDelay) {
-			if(selectedCommit > 0) {
-				selectedCommit--;
-				keyRepeatDelay = 3;
-			}
-		} else if(hHeld & KEY_DOWN && !keyRepeatDelay) {
-			if(selectedCommit < (int)jsonShas.size()-1) {
-				selectedCommit++;
-				keyRepeatDelay = 3;
-			}
-		} else if(hHeld & KEY_LEFT && !keyRepeatDelay) {
-			selectedCommit -= 10;
-			if(selectedCommit < 0) {
-				selectedCommit = 0;
-			}
-			keyRepeatDelay = 3;
-		} else if(hHeld & KEY_RIGHT && !keyRepeatDelay) {
-			selectedCommit += 10;
-			if(selectedCommit > (int)jsonBody.size()) {
-				selectedCommit = jsonBody.size()-1;
-			}
-			keyRepeatDelay = 3;
-		}
-		std::string commitsText = "Choose a commit for commit notes:\n";
-		for(int i=(selectedCommit<9) ? 0 : selectedCommit-9;i<(int)jsonBody.size()&&i<((selectedCommit<9) ? 10 : selectedCommit+1);i++) {
-			if(i == selectedCommit) {
-				commitsText += "> " + jsonBody[i] + "\n";
-			} else {
-				commitsText += "  " + jsonBody[i] + "\n";
-			}
-		}
-		for(uint i=0;i<((jsonBody.size()<9) ? 10-jsonBody.size() : 0);i++) {
-			commitsText += "\n";
-		}
-		commitsText += "B: Back   A: Info";
-		displayBottomMsg(commitsText.c_str());
-	}
-
-	setMessageText(jsonBody[selectedCommit]);
-	jsonName = jsonShas[selectedCommit].substr(0,7);
-	int textPosition = 0;
-	bool redrawText = true;
-
-	while(1) {
-		if(redrawText) {
-			drawMessageText(textPosition, showExitText);
-			redrawText = false;
 		}
 
-		gspWaitForVBlank();
-		hidScanInput();
-		const u32 hDown = hidKeysDown();
-		const u32 hHeld = hidKeysHeld();
+		setMessageText(jsonBody[selectedCommit]);
+		jsonName = jsonShas[selectedCommit].substr(0,7);
+		int textPosition = 0;
+		bool redrawText = true;
 
-		if(hHeld & KEY_UP || hHeld & KEY_DOWN) {
-			for(int i=0;i<9;i++)
-				gspWaitForVBlank();
-		}
+		while(1) {
+			if(redrawText) {
+				drawMessageText(textPosition, showExitText);
+				redrawText = false;
+			}
 
-		if(hDown & KEY_A) {
-			return jsonShas[selectedCommit].substr(0,7);
-		} else if(hDown & KEY_B || hDown & KEY_Y || hDown & KEY_TOUCH) {
-			goto showCommitList;
-		} else if(hHeld & KEY_UP) {
-			if(textPosition > 0) {
-				textPosition--;
-				redrawText = true;
+			gspWaitForVBlank();
+			hidScanInput();
+			hDown = hidKeysDown();
+			const u32 hHeld = hidKeysHeld();
+
+			if(hHeld & KEY_UP || hHeld & KEY_DOWN) {
+				for(int i=0;i<9;i++)
+					gspWaitForVBlank();
 			}
-		} else if(hHeld & KEY_DOWN) {
-			if(textPosition < (int)(_topText.size() - 10)) {
-				textPosition++;
-				redrawText = true;
+
+			if(hDown & KEY_A) {
+				return jsonShas[selectedCommit].substr(0,7);
+			} else if(hDown & KEY_B || hDown & KEY_Y || hDown & KEY_TOUCH) {
+				break;
+			} else if(hHeld & KEY_UP) {
+				if(textPosition > 0) {
+					textPosition--;
+					redrawText = true;
+				}
+			} else if(hHeld & KEY_DOWN) {
+				if(textPosition < (int)(_topText.size() - 10)) {
+					textPosition++;
+					redrawText = true;
+				}
 			}
 		}
-	}
+	}	
 }
 
 void setMessageText(const std::string &text) {
@@ -1407,32 +1364,40 @@ int displayMenu(std::string text, std::vector<std::string> menu, std::string opt
 		gspWaitForVBlank();
 		hidScanInput();
 		hDown = hidKeysDown();
-
+		// Todo: re-add const u32 hHeld = hidKeysHeld();
+		
 		if((hDown & KEY_A) || (hDown & KEY_X)) {
 			return selectedOption;
 		} else if(hDown & KEY_B) {
 			return -1;
 		} else if(hDown & KEY_UP) {
 			selectedOption--;
-			if(selectedOption < 0) {	
-				selectedOption = menuMax;
-			}
 		} else if(hDown & KEY_DOWN) {
 			selectedOption++;
-			if(selectedOption > menuMax) {
-				selectedOption = 0;
-			}
+		} else if(hDown & KEY_LEFT) {
+			selectedOption -= 10;
+		} else if(hDown & KEY_RIGHT) {
+			selectedOption += 10;
 		}
 		
+		if(selectedOption < 0) {	
+			selectedOption = 0;
+		}
+		if(selectedOption > menuMax) {
+			selectedOption = menuMax;
+		}
+
 		std::string tmpText = text + "\n";
 
+		if (selectedOption < menuMax && selectedOption + max - 1  < window) {
+		    window = selectedOption + max - 1;
+		}
 		if (selectedOption >= max && selectedOption > window) {
 			window = selectedOption;
 		}
-		if (selectedOption < max && selectedOption < (window - max + 1)) {
-		    window = max - 1 + selectedOption;
+		if (window < max - 1) {
+			window = max - 1;
 		}
-
 		int adj = window - max + 1;		
 		for (int i = 0; i < max; i++)
 		{		     
@@ -1470,17 +1435,19 @@ u32 displayChoice(std::string text) {
 }
 
 void downloadExtras(void) {
-	vector<string> extrasOptions = {"Boxart", "Themes"};
-	u32 hDown;
-	int selectedOption = displayMenu("What would you like to download?", extrasOptions, "B: Back   A: Choose", hDown);
-	if (selectedOption == -1) {
-		return;
-	}
+	while (true){
+		vector<string> extrasOptions = {"Boxart", "Themes"};
+		u32 hDown;
+		int selectedOption = displayMenu("What would you like to download?", extrasOptions, "B: Back   A: Choose", hDown);
+		if (selectedOption == -1) {
+			return;
+		}
 
-	if(selectedOption == 0) {
-		downloadBoxart();
-	} else {
-		downloadThemes();
+		if(selectedOption == 0) {
+			downloadBoxart();
+		} else {
+			downloadThemes();
+		}
 	}
 }
 
@@ -1640,7 +1607,6 @@ void downloadThemes(void) {
 			themeNames.push_back(themeList[i].name);
 		}
 
-		// KirovAir TODO test this.
 		selectedOption = displayMenu("Select a theme:", themeNames, "B: Back   A: Choose", hDown);
 		if(hDown & KEY_A) {
 			mkdir((themeList[selectedOption].sdPath).c_str(), 0777);

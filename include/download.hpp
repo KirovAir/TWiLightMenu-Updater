@@ -29,7 +29,6 @@ void loadUsernamePassword(void);
 void saveUsernamePassword(void);
 
 Result downloadToFile(std::string url, std::string path);
-Result downloadBoxartToFile(std::string filename, std::string sha1, std::string header, std::string targetPath);
 Result downloadFromRelease(std::string url, std::string asset, std::string path);
 
 /**
@@ -145,3 +144,5 @@ void downloadBoxart(void);
  * Download themes from DS-Homebrew/twlmenu-extras.
  */
 void downloadThemes(void);
+
+int displayMenu(std::string text, std::vector<std::string> menu, std::string options, u32 &hDown);
