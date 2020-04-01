@@ -211,11 +211,11 @@ Result downloadBoxartToFile(std::string filename, std::string sha1, std::string 
 	int boxartWidth = 128;
 	int boxartHeight = 115;
 	if (boxartSize == 1) {
-		boxartWidth = 210;
-		boxartHeight = 146;
+		boxartWidth = 168;
+		boxartHeight = 130;
 	} else if (boxartSize == 2) {
-		boxartWidth = 256;
-		boxartHeight = 192;
+		boxartWidth = 208;
+		boxartHeight = 143;
 	}
 
 	std::string borderStyleStr = "None";
@@ -1494,7 +1494,7 @@ void downloadBoxart(void) {
 		scanDir = "sdmc:/";
 	}
 
-	vector<string> options = {"Normal (128x115, default)", "Large (210x146)", "Full Screen (256x192)"};
+	vector<string> options = {"Normal (128x115, default)", "Large (168x130)", "XL (208x143)"};
 	int boxartSize = displayMenu("Choose a boxart size", options, "B: Back   A: Choose", hDown);
 	if (boxartSize == -1) {
 		boxartSize = 0;
@@ -1582,6 +1582,11 @@ void downloadBoxart(void) {
 		}
 	}
 	rmdir("sdmc:/_nds/TWiLightMenu/boxart/temp");
+	CIniFile settingsini("sdmc:/_nds/TWiLightMenu/settings.ini");
+	if (boxartSize > 0) {
+		displayBottomMsg("Disabling boxart cache (for bigger boxarts)");
+		settingsini.SetInt("SRLOADER", "CACHE_BOX_ART", 0);
+	}
 	doneMsg();
 }
 
